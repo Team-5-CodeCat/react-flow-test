@@ -278,8 +278,25 @@ export function parseYAMLToGraph(yamlContent: string): { nodes: Node<PipelineNod
                   id: `edge-${index - 1}`,
                   source: nodes[index - 1].id,
                   target: node.id,
+                  type: 'smoothstep',
                   animated: true,
-                  markerEnd: { type: MarkerType.ArrowClosed }
+                  markerEnd: { 
+                    type: MarkerType.ArrowClosed,
+                    width: 20,
+                    height: 20
+                  },
+                  label: `${index}`,
+                  labelStyle: {
+                    fill: '#fff',
+                    fontWeight: 600,
+                    fontSize: '12px'
+                  },
+                  labelBgStyle: {
+                    fill: '#1a192b',
+                    fillOpacity: 0.8
+                  },
+                  labelBgPadding: [4, 4],
+                  labelBgBorderRadius: 4
                 }
                 edges.push(edge)
               }
@@ -669,11 +686,24 @@ export function parseShellToGraph(shellContent: string): { nodes: Node<PipelineN
             source: `shell-step-${nodeIndex - 1}`,
             target: `shell-step-${nodeIndex}`,
             type: 'smoothstep',
+            animated: true,
             markerEnd: {
               type: MarkerType.ArrowClosed,
               width: 20,
               height: 20
-            }
+            },
+            label: `${nodeIndex}`,
+            labelStyle: {
+              fill: '#fff',
+              fontWeight: 600,
+              fontSize: '12px'
+            },
+            labelBgStyle: {
+              fill: '#1a192b',
+              fillOpacity: 0.8
+            },
+            labelBgPadding: [4, 4],
+            labelBgBorderRadius: 4
           }
           edges.push(edge)
         }

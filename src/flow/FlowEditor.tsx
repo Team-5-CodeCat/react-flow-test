@@ -100,7 +100,19 @@ const EditorCanvas = forwardRef<FlowEditorRef, FlowEditorProps>(({ onGraphChange
 
   // 엣지 연결 시: 화살표와 애니메이션 추가
   const onConnect = useCallback((params: Edge | Connection) => {
-    setEdges(e => addEdge({ ...params, animated: true, markerEnd: { type: MarkerType.ArrowClosed } }, e))
+    setEdges(e => {
+      const newEdge = {
+        ...params,
+        type: 'smoothstep',
+        animated: true,
+        markerEnd: { 
+          type: MarkerType.ArrowClosed,
+          width: 20,
+          height: 20
+        }
+      }
+      return addEdge(newEdge, e)
+    })
   }, [setEdges])
 
   // 팔레트 항목 → 사용자가 알아볼 라벨 생성
@@ -128,11 +140,43 @@ const EditorCanvas = forwardRef<FlowEditorRef, FlowEditorProps>(({ onGraphChange
   const addNode = useCallback((data: Partial<PipelineNodeData>, position?: { x: number, y: number }) => {
     setNodes(ns => {
       const id = `${data.kind}-${Date.now()}-${Math.round(Math.random()*1e4)}`
-      const pos = position ?? { x: 100 + ns.length * 40, y: 200 }
+      const pos = position ?? { x: 100 + ns.length * 200, y: 200 }
       const node: Node<PipelineNodeData> = { id, position: pos, data: { label: labelFor(data), ...(data as PipelineNodeData) } }
+      
+      // 이전 노드가 있으면 자동으로 연결
+      if (ns.length > 0) {
+        const lastNode = ns[ns.length - 1]
+        const edge: Edge = {
+          id: `auto-edge-${lastNode.id}-${id}`,
+          source: lastNode.id,
+          target: id,
+          type: 'smoothstep',
+          animated: true,
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            width: 20,
+            height: 20
+          },
+          label: `${ns.length}`,
+          labelStyle: {
+            fill: '#fff',
+            fontWeight: 600,
+            fontSize: '12px'
+          },
+          labelBgStyle: {
+            fill: '#1a192b',
+            fillOpacity: 0.8
+          },
+          labelBgPadding: [4, 4] as [number, number],
+          labelBgBorderRadius: 4
+        }
+        
+        setEdges(es => [...es, edge])
+      }
+      
       return [...ns, node]
     })
-  }, [setNodes])
+  }, [setNodes, setEdges])
 
   // 좌측 팔레트 정의 (드래그&클릭으로 추가)
   const palette = useMemo(() => [
@@ -153,42 +197,39 @@ const EditorCanvas = forwardRef<FlowEditorRef, FlowEditorProps>(({ onGraphChange
 
   // 선형 순서를 계산하여 엣지 라벨(1,2,3...)과 화살표를 갱신
   useEffect(() => {
-    const byId = new Map(nodes.map(n => [n.id, n]))
-    const outgoing = new Map<string, string[]>()
-    edges.forEach(e => {
-      if (!outgoing.has(e.source)) outgoing.set(e.source, [])
-      outgoing.get(e.source)!.push(e.target)
-    })
-    const start = nodes.find(n => n.data.kind === 'start')
-    const ordered: string[] = []
-    if (start) {
-      const visited = new Set<string>()
-      let cursor: Node<PipelineNodeData> | undefined = start
-      while (cursor && !visited.has(cursor.id)) {
-        ordered.push(cursor.id)
-        visited.add(cursor.id)
-        const nextIds = (outgoing.get(cursor.id) || [])
-        if (nextIds.length !== 1) break
-        const next = byId.get(nextIds[0])
-        if (!next) break
-        cursor = next
-      }
-    }
-
-    const orderMap = new Map<string, number>()
-    for (let i = 0; i < ordered.length - 1; i++) {
-      orderMap.set(`${ordered[i]}->${ordered[i+1]}`, i + 1)
-    }
-
+    // 간단한 방법: edges 배열의 순서대로 순서 번호 부여
     let changed = false
-    const nextEdges = edges.map(e => {
-      const key = `${e.source}->${e.target}`
-      const label = orderMap.has(key) ? String(orderMap.get(key)) : undefined
-      const markerEnd = { type: MarkerType.ArrowClosed }
-      const needUpdate = e.label !== label || JSON.stringify(e.markerEnd) !== JSON.stringify(markerEnd)
+    const nextEdges = edges.map((e, index) => {
+      const label = String(index + 1)
+      const markerEnd = { 
+        type: MarkerType.ArrowClosed,
+        width: 20,
+        height: 20
+      }
+      const needUpdate = e.label !== label || 
+                        JSON.stringify(e.markerEnd) !== JSON.stringify(markerEnd) ||
+                        e.type !== 'smoothstep' ||
+                        !e.animated
       if (needUpdate) {
         changed = true
-        return { ...e, label, markerEnd }
+        return { 
+          ...e, 
+          label, 
+          markerEnd,
+          type: 'smoothstep',
+          animated: true,
+          labelStyle: {
+            fill: '#fff',
+            fontWeight: 600,
+            fontSize: '12px'
+          },
+          labelBgStyle: {
+            fill: '#1a192b',
+            fillOpacity: 0.8
+          },
+          labelBgPadding: [4, 4] as [number, number],
+          labelBgBorderRadius: 4
+        }
       }
       return e
     })
