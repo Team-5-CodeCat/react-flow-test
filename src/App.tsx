@@ -28,6 +28,19 @@ function App() {
     }
   }, [])
 
+  const handleShellUpdate = useCallback((shellContent: string) => {
+    console.log('=== App.handleShellUpdate 호출됨 ===')
+    console.log('Shell 내용:', shellContent)
+    console.log('flowEditorRef.current:', flowEditorRef.current)
+    
+    if (flowEditorRef.current) {
+      console.log('FlowEditor의 updateGraphFromShell 함수 호출 중...')
+      flowEditorRef.current.updateGraphFromShell(shellContent)
+    } else {
+      console.error('flowEditorRef.current가 null입니다')
+    }
+  }, [])
+
   return (
     <div style={{ width: '100%', display: 'grid', gridTemplateColumns: '1fr 520px', gap: 16, height: '100vh', padding: 16, boxSizing: 'border-box' }}>
       <div style={{ height: '100%', border: '1px solid rgba(255,255,255,.15)', borderRadius: 8, overflow: 'hidden' }}>
@@ -36,7 +49,7 @@ function App() {
       <div style={{ height: '100%', border: '1px solid rgba(255,255,255,.15)', borderRadius: 8, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         <div style={{ padding: 12, borderBottom: '1px solid rgba(255,255,255,.15)', fontWeight: 700 }}>Output</div>
         <div style={{ padding: 12, flex: 1, overflow: 'hidden' }}>
-          <OutputPanel nodes={nodes} edges={edges} onYAMLUpdate={handleYAMLUpdate} />
+                         <OutputPanel nodes={nodes} edges={edges} onYAMLUpdate={handleYAMLUpdate} onShellUpdate={handleShellUpdate} />
         </div>
       </div>
     </div>

@@ -598,4 +598,175 @@ function createNodeDataFromGitHubAction(step: Record<string, string>): PipelineN
   }
 }
 
+/**
+ * Shell 코드를 파싱하여 그래프로 변환
+ */
+export function parseShellToGraph(shellContent: string): { nodes: Node<PipelineNodeData>[], edges: Edge[] } {
+  try {
+    console.log('=== Shell에서 그래프 생성 시작 ===')
+    const lines = shellContent.split('\n').filter(line => line.trim())
+    const nodes: Node<PipelineNodeData>[] = []
+    const edges: Edge[] = []
+    
+    let nodeIndex = 0
+    
+    lines.forEach((line) => {
+      const trimmedLine = line.trim()
+      
+      // 주석으로 시작하는 라인을 노드로 변환
+      if (trimmedLine.startsWith('#') && trimmedLine.length > 1) {
+        const comment = trimmedLine.substring(1).trim()
+        
+        // 특정 패턴에 따른 노드 타입 결정
+        let nodeKind: PipelineNodeKind = 'prebuild_custom'
+        let nodeLabel = comment
+        
+        if (comment.includes('Checkout') || comment.includes('checkout')) {
+          nodeKind = 'git_clone'
+          nodeLabel = 'Checkout Code'
+        } else if (comment.includes('Setup Java') || comment.includes('Java')) {
+          nodeKind = 'prebuild_java'
+          nodeLabel = 'Setup Java'
+        } else if (comment.includes('Setup Python')) {
+          nodeKind = 'prebuild_python'
+          nodeLabel = 'Setup Python'
+        } else if (comment.includes('Setup Node')) {
+          nodeKind = 'prebuild_node'
+          nodeLabel = 'Setup Node.js'
+        } else if (comment.includes('Build') || comment.includes('build')) {
+          nodeKind = 'build_npm'
+          nodeLabel = comment
+        } else if (comment.includes('Test') || comment.includes('test')) {
+          nodeKind = 'run_tests'
+          nodeLabel = comment
+        } else if (comment.includes('Deploy') || comment.includes('deploy')) {
+          nodeKind = 'deploy'
+          nodeLabel = comment
+        } else if (comment.includes('Execute') || comment.includes('Pipeline')) {
+          nodeKind = 'prebuild_custom'
+          nodeLabel = comment
+        }
+        
+        const nodeData: PipelineNodeData = {
+          kind: nodeKind,
+          label: nodeLabel,
+          command: comment
+        }
+        
+        const node: Node<PipelineNodeData> = {
+          id: `shell-step-${nodeIndex}`,
+          position: { x: 100, y: 100 + nodeIndex * 150 },
+          data: nodeData,
+          type: 'default'
+        }
+        
+        nodes.push(node)
+        
+        // 이전 노드와 연결
+        if (nodeIndex > 0) {
+          const edge: Edge = {
+            id: `shell-edge-${nodeIndex - 1}-${nodeIndex}`,
+            source: `shell-step-${nodeIndex - 1}`,
+            target: `shell-step-${nodeIndex}`,
+            type: 'smoothstep',
+            markerEnd: {
+              type: MarkerType.ArrowClosed,
+              width: 20,
+              height: 20
+            }
+          }
+          edges.push(edge)
+        }
+        
+        nodeIndex++
+      }
+    })
+    
+    console.log('Shell 파싱 결과:', { nodes, edges })
+    return { nodes, edges }
+    
+  } catch (error) {
+    console.error('Shell 파싱 중 오류:', error)
+    return { nodes: [], edges: [] }
+  }
+}
+
+/**
+ * Shell 코드를 파싱하여 YAML 생성
+ */
+export function generateYAMLFromShell(shellContent: string): string {
+  try {
+    console.log('=== Shell에서 YAML 생성 시작 ===')
+    const lines = shellContent.split('\n').filter(line => line.trim())
+    const steps: Record<string, unknown>[] = []
+    
+    lines.forEach((line) => {
+      const trimmedLine = line.trim()
+      
+      // 주석으로 시작하는 라인을 step으로 변환
+      if (trimmedLine.startsWith('#') && trimmedLine.length > 1) {
+        const comment = trimmedLine.substring(1).trim()
+        
+        // 특정 패턴에 따른 step 생성
+        const step: Record<string, unknown> = { name: comment }
+        
+        if (comment.includes('Checkout') || comment.includes('checkout')) {
+          step.uses = 'actions/checkout@v3'
+        } else if (comment.includes('Setup Java') || comment.includes('Java')) {
+          step.uses = 'actions/setup-java@v3'
+          step.with = {
+            distribution: 'temurin',
+            'java-version': '17'
+          }
+        } else if (comment.includes('Setup Python')) {
+          step.uses = 'actions/setup-python@v4'
+          step.with = {
+            'python-version': '3.9'
+          }
+        } else if (comment.includes('Setup Node')) {
+          step.uses = 'actions/setup-node@v3'
+          step.with = {
+            'node-version': '18'
+          }
+        } else if (comment.includes('Build') || comment.includes('build')) {
+          step.run = `# ${comment}\necho "Building..."`
+        } else if (comment.includes('Test') || comment.includes('test')) {
+          step.run = `# ${comment}\necho "Running tests..."`
+        } else if (comment.includes('Deploy') || comment.includes('deploy')) {
+          step.run = `# ${comment}\necho "Deploying..."`
+        } else if (comment.includes('Execute') || comment.includes('Pipeline')) {
+          step.shell = 'bash'
+          step.run = `#!/bin/bash\necho "🚀 Starting pipeline..."\nchmod +x gradlew || true`
+        } else {
+          // 기본적으로 run으로 처리
+          step.run = `# ${comment}\necho "Executing: ${comment}"`
+        }
+        
+        steps.push(step)
+      }
+    })
+    
+    if (steps.length > 0) {
+      const yaml = {
+        name: 'Generated CI/CD Pipeline',
+        on: ['push', 'pull_request'],
+        jobs: {
+          pipeline: {
+            'runs-on': 'ubuntu-latest',
+            steps: steps
+          }
+        }
+      }
+      
+      console.log('=== Shell에서 YAML 생성 완료 ===')
+      return JSON.stringify(yaml, null, 2)
+    }
+    
+    return '# Shell에서 YAML을 생성할 수 없습니다.'
+  } catch (error) {
+    console.error('Shell에서 YAML 생성 중 오류:', error)
+    return '# Shell 파싱 오류로 YAML을 생성할 수 없습니다.'
+  }
+}
+
 

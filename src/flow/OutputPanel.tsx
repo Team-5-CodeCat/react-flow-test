@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { Edge, Node } from 'reactflow'
-import { generateYAML, generateShell, generateShellFromYAML } from './codegen'
+import { generateYAML, generateShell, generateShellFromYAML, generateYAMLFromShell } from './codegen'
 import type { PipelineNodeData } from './codegen'
 
 /**
@@ -14,9 +14,10 @@ export interface OutputPanelProps {
   nodes: Node<PipelineNodeData>[]
   edges: Edge[]
   onYAMLUpdate?: (yamlContent: string) => void
+  onShellUpdate?: (shellContent: string) => void
 }
 
-export default function OutputPanel({ nodes, edges, onYAMLUpdate }: OutputPanelProps) {
+export default function OutputPanel({ nodes, edges, onYAMLUpdate, onShellUpdate }: OutputPanelProps) {
   const [tab, setTab] = useState<'yaml' | 'shell'>('yaml')
   const [isEditing, setIsEditing] = useState(false)
   const [editedContent, setEditedContent] = useState('')
@@ -55,6 +56,21 @@ export default function OutputPanel({ nodes, edges, onYAMLUpdate }: OutputPanelP
     } else if (editingTab === 'shell') {
       // Shell 편집 시에는 Shell만 저장
       setLastSavedShell(editedContent)
+      
+      // Shell 편집 시 onShellUpdate 호출
+      if (onShellUpdate) {
+        onShellUpdate(editedContent)
+      }
+      
+      // Shell이 변경되면 그에 맞는 YAML 코드도 자동 생성
+      try {
+        const newYAML = generateYAMLFromShell(editedContent)
+        setLastSavedYAML(newYAML)
+        console.log('Shell 변경으로 YAML 자동 생성:', newYAML)
+      } catch (error) {
+        console.error('YAML 자동 생성 실패:', error)
+        setLastSavedYAML('') // 실패 시 YAML 초기화
+      }
     }
     
     // 여기서 편집된 내용을 처리할 수 있습니다

@@ -19,6 +19,7 @@ export interface FlowEditorProps {
 
 export interface FlowEditorRef {
   updateGraphFromYAML: (yamlContent: string) => void
+  updateGraphFromShell: (shellContent: string) => void
 }
 
 // 실제 에디터 캔버스 컴포넌트 (Provider 내부에서만 동작)
@@ -59,10 +60,43 @@ const EditorCanvas = forwardRef<FlowEditorRef, FlowEditorProps>(({ onGraphChange
     })
   }, [setNodes, setEdges, rf])
 
+  // Shell에서 파싱된 그래프로 업데이트
+  const updateGraphFromShell = useCallback((shellContent: string) => {
+    console.log('=== FlowEditor.updateGraphFromShell 호출됨 ===')
+    console.log('받은 Shell 내용:', shellContent)
+    
+    // parseShellToGraph 함수를 동적으로 import
+    import('./codegen').then(({ parseShellToGraph }) => {
+      console.log('parseShellToGraph 함수 로드 완료')
+      
+      const { nodes: newNodes, edges: newEdges } = parseShellToGraph(shellContent)
+      console.log('Shell 파싱 결과:', { newNodes, newEdges })
+      
+      if (newNodes.length > 0) {
+        console.log('새로운 Shell 노드들을 그래프에 적용 중...')
+        // 새로운 노드와 엣지로 그래프 업데이트
+        setNodes(newNodes)
+        setEdges(newEdges)
+        
+        // 뷰를 새로운 그래프에 맞게 조정
+        setTimeout(() => {
+          rf.fitView({ padding: 0.1 })
+        }, 100)
+        
+        console.log('Shell 그래프 업데이트 완료')
+      } else {
+        console.warn('Shell에서 파싱된 노드가 없습니다')
+      }
+    }).catch(error => {
+      console.error('Shell 파싱 모듈 로드 오류:', error)
+    })
+  }, [setNodes, setEdges, rf])
+
   // ref를 통해 외부에서 함수 호출 가능하도록 설정
   useImperativeHandle(ref, () => ({
-    updateGraphFromYAML
-  }), [updateGraphFromYAML])
+    updateGraphFromYAML,
+    updateGraphFromShell
+  }), [updateGraphFromYAML, updateGraphFromShell])
 
   // 엣지 연결 시: 화살표와 애니메이션 추가
   const onConnect = useCallback((params: Edge | Connection) => {
