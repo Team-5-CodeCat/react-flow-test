@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useImperativeHandle, forwardRef } from 'react'
 import ReactFlow, { Background, Controls, MarkerType, MiniMap, ReactFlowProvider, addEdge, type Connection, type Edge, type Node, Panel, useEdgesState, useNodesState, useReactFlow } from 'reactflow'
 import 'reactflow/dist/style.css'
 import type { PipelineNodeData } from './codegen'
@@ -17,8 +17,12 @@ export interface FlowEditorProps {
   onGraphChange?: (nodes: Node<PipelineNodeData>[], edges: Edge[]) => void
 }
 
+export interface FlowEditorRef {
+  updateGraphFromYAML: (yamlContent: string) => void
+}
+
 // 실제 에디터 캔버스 컴포넌트 (Provider 내부에서만 동작)
-function EditorCanvas({ onGraphChange }: FlowEditorProps) {
+const EditorCanvas = forwardRef<FlowEditorRef, FlowEditorProps>(({ onGraphChange }, ref) => {
   // React Flow 상태 훅: 노드/엣지 배열과 변경 핸들러를 반환
   const [nodes, setNodes, onNodesChange] = useNodesState<PipelineNodeData>(initialNodes)
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
@@ -33,6 +37,32 @@ function EditorCanvas({ onGraphChange }: FlowEditorProps) {
       onGraphChange(nodes, edges)
     }
   }, [nodes, edges, onGraphChange])
+
+  // YAML에서 파싱된 그래프로 업데이트
+  const updateGraphFromYAML = useCallback((yamlContent: string) => {
+    // parseYAMLToGraph 함수를 동적으로 import
+    import('./codegen').then(({ parseYAMLToGraph }) => {
+      const { nodes: newNodes, edges: newEdges } = parseYAMLToGraph(yamlContent)
+      
+      if (newNodes.length > 0) {
+        // 새로운 노드와 엣지로 그래프 업데이트
+        setNodes(newNodes)
+        setEdges(newEdges)
+        
+        // 뷰를 새로운 그래프에 맞게 조정
+        setTimeout(() => {
+          rf.fitView({ padding: 0.1 })
+        }, 100)
+      }
+    }).catch(error => {
+      console.error('YAML 파싱 모듈 로드 오류:', error)
+    })
+  }, [setNodes, setEdges, rf])
+
+  // ref를 통해 외부에서 함수 호출 가능하도록 설정
+  useImperativeHandle(ref, () => ({
+    updateGraphFromYAML
+  }), [updateGraphFromYAML])
 
   // 엣지 연결 시: 화살표와 애니메이션 추가
   const onConnect = useCallback((params: Edge | Connection) => {
@@ -186,7 +216,7 @@ function EditorCanvas({ onGraphChange }: FlowEditorProps) {
       </div>
     </div>
   )
-}
+})
 
 // Provider로 감싼 래퍼. useReactFlow 훅 사용을 가능하게 함
 export default function FlowEditor({ onGraphChange }: FlowEditorProps) {
@@ -196,5 +226,14 @@ export default function FlowEditor({ onGraphChange }: FlowEditorProps) {
     </ReactFlowProvider>
   )
 }
+
+// forwardRef를 사용한 래퍼 컴포넌트
+export const FlowEditorWithRef = forwardRef<FlowEditorRef, FlowEditorProps>((props, ref) => {
+  return (
+    <ReactFlowProvider>
+      <EditorCanvas ref={ref} onGraphChange={props.onGraphChange} />
+    </ReactFlowProvider>
+  )
+})
 
 

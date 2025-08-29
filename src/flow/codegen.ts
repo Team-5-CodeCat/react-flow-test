@@ -1,4 +1,7 @@
 import type { Edge, Node } from 'reactflow'
+import { MarkerType } from 'reactflow'
+import { load, Kind } from 'yaml-ast-parser'
+import type { YAMLNode, YAMLScalar, YamlMap, YAMLSequence } from 'yaml-ast-parser'
 
 /**
  * CI/CD 그래프 → 코드 생성 모듈
@@ -222,6 +225,377 @@ export function generateYAML(nodes: PipelineNode[], edges: Edge[]): string {
   const indented = script.split('\n').map(l => (l ? '          ' + l : '')).join('\n')
 
   return `# Generated CI/CD Pipeline\nname: ReactFlow CI/CD Pipeline\non: [push, pull_request]\njobs:\n  pipeline:\n    runs-on: ubuntu-latest\n    steps:\n      - name: Checkout code\n        uses: actions/checkout@v3\n${setup.join('\n')}\n      - name: Execute Pipeline\n        shell: bash\n        run: |\n${indented}`
+}
+
+/**
+ * YAML 문자열을 AST로 파싱하여 노드와 엣지로 변환
+ */
+export function parseYAMLToGraph(yamlContent: string): { nodes: Node<PipelineNodeData>[], edges: Edge[] } {
+  try {
+    console.log('=== YAML 파싱 시작 ===')
+    console.log('입력 YAML:', yamlContent)
+    
+    // yaml-ast-parser를 사용하여 YAML을 AST로 파싱
+    const ast = load(yamlContent)
+    console.log('생성된 AST:', ast)
+    
+    const nodes: Node<PipelineNodeData>[] = []
+    const edges: Edge[] = []
+    
+    // AST에서 steps 섹션 찾기
+    const steps = findStepsInAST(ast)
+    console.log('찾은 steps 섹션:', steps)
+    
+    if (steps && steps.kind === Kind.SEQ) {
+      const stepsSequence = steps as YAMLSequence
+      console.log(`steps 시퀀스 발견: ${stepsSequence.items.length}개 항목`)
+      
+      stepsSequence.items.forEach((step, index) => {
+        console.log(`Step 처리 중:`, step)
+        
+        if (step.kind === Kind.MAP) {
+          const stepMap = step as YamlMap
+          const stepData = parseStepFromAST(stepMap)
+          
+          if (stepData) {
+            console.log(`Step ${index} 파싱 완료:`, stepData)
+            
+            const nodeData = createNodeDataFromGitHubAction(stepData)
+            if (nodeData) {
+              console.log(`Step ${index} 노드 데이터 생성:`, nodeData)
+              
+              const node: Node<PipelineNodeData> = {
+                id: `step-${index}`,
+                position: { x: 100, y: 100 + index * 150 },
+                data: nodeData,
+                type: 'default'
+              }
+              nodes.push(node)
+              
+              // 이전 노드와 연결
+              if (index > 0) {
+                const edge: Edge = {
+                  id: `edge-${index - 1}`,
+                  source: nodes[index - 1].id,
+                  target: node.id,
+                  animated: true,
+                  markerEnd: { type: MarkerType.ArrowClosed }
+                }
+                edges.push(edge)
+              }
+            } else {
+              console.warn(`Step ${index}에서 노드 데이터 생성 실패`)
+            }
+          } else {
+            console.warn(`Step ${index} 파싱 실패`)
+          }
+        } else {
+          console.warn(`Step ${index}가 MAP이 아님:`, step.kind)
+        }
+      })
+    } else {
+      console.warn('steps 섹션을 찾을 수 없거나 시퀀스가 아님:', steps)
+    }
+    
+    console.log('=== 최종 결과 ===')
+    console.log('생성된 노드:', nodes)
+    console.log('생성된 엣지:', edges)
+    
+    return { nodes, edges }
+  } catch (error) {
+    console.error('YAML AST 파싱 오류:', error)
+    console.error('오류 스택:', error instanceof Error ? error.stack : '알 수 없는 오류')
+    return { nodes: [], edges: [] }
+  }
+}
+
+/**
+ * YAML 문자열을 직접 파싱하여 Shell 코드 생성
+ * - parseYAMLToGraph와 유사하지만 Shell 코드만 반환
+ */
+export function generateShellFromYAML(yamlContent: string): string {
+  try {
+    console.log('=== YAML에서 Shell 생성 시작 ===')
+    
+    // yaml-ast-parser를 사용하여 YAML을 AST로 파싱
+    const ast = load(yamlContent)
+    
+    // AST에서 steps 섹션 찾기
+    const steps = findStepsInAST(ast)
+    
+    if (steps && steps.kind === Kind.SEQ) {
+      const stepsSequence = steps as YAMLSequence
+      console.log(`Shell 생성: ${stepsSequence.items.length}개 step 발견`)
+      
+      // 각 step을 Shell 명령어로 변환
+      const shellCommands: string[] = []
+      
+      stepsSequence.items.forEach((step) => {
+        if (step.kind === Kind.MAP) {
+          const stepMap = step as YamlMap
+          const stepData = parseStepFromAST(stepMap)
+          
+          if (stepData) {
+            const shellCommand = convertStepToShell(stepData)
+            if (shellCommand) {
+              shellCommands.push(shellCommand)
+            }
+          }
+        }
+      })
+      
+      if (shellCommands.length > 0) {
+        const result = shellCommands.join('\n\n')
+        console.log('=== Shell 생성 완료 ===')
+        return result
+      }
+    }
+    
+    return '# YAML에서 Shell을 생성할 수 없습니다.'
+  } catch (error) {
+    console.error('YAML에서 Shell 생성 중 오류:', error)
+    return '# YAML 파싱 오류로 Shell을 생성할 수 없습니다.'
+  }
+}
+
+/**
+ * GitHub Actions step을 Shell 명령어로 변환
+ */
+function convertStepToShell(stepData: Record<string, string>): string | null {
+  const { name, uses, run, shell } = stepData
+  
+  // uses 기반 step 처리
+  if (uses) {
+    if (uses.includes('checkout')) {
+      return `# ${name}\necho "📥 Checking out code..."\ngit clone ${stepData.repoUrl || 'https://github.com/user/repo.git'} .\ngit checkout ${stepData.branch || 'main'}`
+    } else if (uses.includes('setup-java')) {
+      return `# ${name}\necho "☕ Setting up Java..."\njava -version\nexport JAVA_HOME=/usr/lib/jvm/temurin-17-jdk\nexport PATH=$JAVA_HOME/bin:$PATH`
+    } else if (uses.includes('setup-node')) {
+      return `# ${name}\necho "🟢 Setting up Node.js..."\nnode --version\nnpm --version`
+    } else if (uses.includes('setup-python')) {
+      return `# ${name}\necho "🐍 Setting up Python..."\npython3 --version\nnpm --version`
+    }
+  }
+  
+  // run 기반 step 처리
+  if (run) {
+    return `# ${name}\necho "🚀 Executing: ${name}"\n${run}`
+  }
+  
+  // shell 기반 step 처리
+  if (shell) {
+    return `# ${name}\necho "💻 Executing with ${shell}..."\n# ${name} 실행`
+  }
+  
+  // 기본 fallback
+  return `# ${name}\necho "⚡ Executing step: ${name}"\n# ${name} 단계 실행`
+}
+
+/**
+ * AST에서 steps 섹션을 찾는 함수
+ */
+function findStepsInAST(ast: YAMLNode): YAMLNode | null {
+  console.log('findStepsInAST 시작, AST 종류:', ast.kind)
+  
+  if (ast.kind === Kind.MAP) {
+    const astMap = ast as YamlMap
+    console.log('AST가 MAP임, mappings 개수:', astMap.mappings.length)
+    
+    for (const mapping of astMap.mappings) {
+      if (mapping.key.kind === Kind.SCALAR) {
+        const key = (mapping.key as YAMLScalar).value
+        console.log('매핑 키 발견:', key)
+        
+        if (key === 'jobs') {
+          console.log('jobs 섹션 발견')
+          // jobs 섹션에서 pipeline 찾기
+          if (mapping.value.kind === Kind.MAP) {
+            const jobsMap = mapping.value as YamlMap
+            console.log('jobs가 MAP임, mappings 개수:', jobsMap.mappings.length)
+            
+            for (const jobMapping of jobsMap.mappings) {
+              if (jobMapping.key.kind === Kind.SCALAR) {
+                const jobKey = (jobMapping.key as YAMLScalar).value
+                console.log('job 키 발견:', jobKey)
+                
+                if (jobKey === 'pipeline') {
+                  console.log('pipeline 섹션 발견')
+                  // pipeline 섹션에서 steps 찾기
+                  if (jobMapping.value.kind === Kind.MAP) {
+                    const pipelineMap = jobMapping.value as YamlMap
+                    console.log('pipeline이 MAP임, mappings 개수:', pipelineMap.mappings.length)
+                    
+                    for (const pipelineMapping of pipelineMap.mappings) {
+                      if (pipelineMapping.key.kind === Kind.SCALAR) {
+                        const pipelineKey = (pipelineMapping.key as YAMLScalar).value
+                        console.log('pipeline 키 발견:', pipelineKey)
+                        
+                        if (pipelineKey === 'steps') {
+                          console.log('steps 섹션 발견!')
+                          return pipelineMapping.value
+                        }
+                      }
+                    }
+                  } else {
+                    console.log('pipeline이 MAP이 아님:', jobMapping.value.kind)
+                  }
+                }
+              } else {
+                console.log('job 키가 SCALAR가 아님:', jobMapping.key.kind)
+              }
+            }
+          } else {
+            console.log('jobs가 MAP이 아님:', mapping.value.kind)
+          }
+        }
+      } else {
+        console.log('매핑 키가 SCALAR가 아님:', mapping.key.kind)
+      }
+    }
+  } else {
+    console.log('AST가 MAP이 아님:', ast.kind)
+  }
+  
+  console.log('steps 섹션을 찾을 수 없음')
+  return null
+}
+
+/**
+ * AST에서 step 데이터를 추출하는 함수
+ */
+function parseStepFromAST(stepMap: YamlMap): Record<string, string> | null {
+  console.log('parseStepFromAST 시작, stepMap mappings 개수:', stepMap.mappings.length)
+  
+  const stepData: Record<string, string> = {}
+  
+  // 모든 매핑을 먼저 확인
+  const allMappings = stepMap.mappings.map(m => ({
+    key: m.key.kind === Kind.SCALAR ? (m.key as YAMLScalar).value : `[${m.key.kind}]`,
+    valueKind: m.value.kind,
+    value: m.value.kind === Kind.SCALAR ? (m.value as YAMLScalar).value : `[${m.value.kind}]`
+  }))
+  console.log('Step의 모든 매핑들:', allMappings)
+  
+  for (const mapping of stepMap.mappings) {
+    console.log('매핑 처리 중:', mapping.key.kind, mapping.value.kind)
+    
+    if (mapping.key.kind === Kind.SCALAR && mapping.value.kind === Kind.SCALAR) {
+      const key = (mapping.key as YAMLScalar).value
+      const value = (mapping.value as YAMLScalar).value
+      
+      console.log('스칼라 키-값 쌍 발견:', key, '=', value)
+      stepData[key] = value
+    } else if (mapping.key.kind === Kind.SCALAR && mapping.value.kind === Kind.MAP) {
+      // with 섹션과 같은 중첩된 맵 처리
+      const key = (mapping.key as YAMLScalar).value
+      const nestedMap = mapping.value as YamlMap
+      
+      console.log('중첩된 맵 발견:', key, 'mappings 개수:', nestedMap.mappings.length)
+      
+      if (key === 'with') {
+        // with 내부의 모든 매핑 확인
+        const withMappings = nestedMap.mappings.map(m => ({
+          key: m.key.kind === Kind.SCALAR ? (m.key as YAMLScalar).value : `[${m.key.kind}]`,
+          valueKind: m.value.kind,
+          value: m.value.kind === Kind.SCALAR ? (m.value as YAMLScalar).value : `[${m.value.kind}]`
+        }))
+        console.log('with 내부의 모든 매핑들:', withMappings)
+        
+        for (const nestedMapping of nestedMap.mappings) {
+          if (nestedMapping.key.kind === Kind.SCALAR && nestedMapping.value.kind === Kind.SCALAR) {
+            const nestedKey = (nestedMapping.key as YAMLScalar).value
+            const nestedValue = (nestedMapping.value as YAMLScalar).value
+            
+            console.log('with 내부 키-값 쌍 발견:', nestedKey, '=', nestedValue)
+            stepData[nestedKey] = nestedValue
+          }
+        }
+      }
+    }
+  }
+  
+  console.log('최종 stepData:', stepData)
+  console.log('stepData 키들:', Object.keys(stepData))
+  return Object.keys(stepData).length > 0 ? stepData : null
+}
+
+/**
+ * GitHub Actions step을 노드 데이터로 변환
+ */
+function createNodeDataFromGitHubAction(step: Record<string, string>): PipelineNodeData | null {
+  const name = step.name || 'Unknown Step'
+  const uses = step.uses || ''
+
+  let kind: PipelineNodeData['kind'] = 'prebuild_custom'
+  const label = name
+  const additionalData: Record<string, string> = {}
+
+  if (uses.includes('actions/setup-node')) {
+    kind = 'prebuild_node'
+    additionalData.manager = 'npm'
+  } else if (uses.includes('actions/setup-python')) {
+    kind = 'prebuild_python'
+    additionalData.lang = 'python'
+  } else if (uses.includes('actions/setup-java')) {
+    kind = 'prebuild_java'
+    additionalData.lang = 'java'
+    if (step['java-version']) {
+      additionalData.javaVersion = step['java-version']
+    }
+    if (step.distribution) {
+      additionalData.distribution = step.distribution
+    }
+  } else if (uses.includes('actions/checkout')) {
+    kind = 'git_clone'
+    additionalData.repoUrl = 'https://github.com/user/repo.git'
+    additionalData.branch = 'main'
+  } else if (uses.includes('actions/setup-apt') || uses.includes('actions/setup-yum') || uses.includes('actions/setup-apk')) {
+    kind = 'linux_install'
+    additionalData.osPkg = 'apt'
+    if (step.packages) {
+      additionalData.packages = step.packages
+    }
+  } else if (uses.includes('actions/setup-npm') || uses.includes('actions/setup-yarn') || uses.includes('actions/setup-pnpm')) {
+    kind = 'prebuild_node'
+    additionalData.manager = 'npm'
+  } else if (uses.includes('actions/setup-pip')) {
+    kind = 'prebuild_python'
+    additionalData.lang = 'python'
+  } else if (uses.includes('actions/setup-maven') || uses.includes('actions/setup-gradle')) {
+    kind = 'prebuild_java'
+    additionalData.lang = 'java'
+  } else if (uses.includes('actions/setup-custom')) {
+    kind = 'prebuild_custom'
+    if (step.script) {
+      additionalData.script = step.script
+    }
+  }
+
+  // shell과 run 속성도 확인
+  if (step.shell) {
+    if (step.shell.includes('bash')) {
+      kind = 'run_tests'
+      additionalData.testType = 'unit'
+      additionalData.command = step.shell
+    }
+  }
+
+  if (step.run) {
+    if (step.run.includes('npm ci') || step.run.includes('npm install')) {
+      kind = 'prebuild_node'
+      additionalData.manager = 'npm'
+    } else if (step.run.includes('mvn') || step.run.includes('gradle')) {
+      kind = 'build_java'
+    } else if (step.run.includes('pip install')) {
+      kind = 'prebuild_python'
+    }
+  }
+
+  return {
+    kind,
+    label,
+    ...additionalData
+  }
 }
 
 
