@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useImperativeHandle, forwardRef } from 'react'
 import ReactFlow, { Background, Controls, MarkerType, MiniMap, ReactFlowProvider, addEdge, type Connection, type Edge, type Node, Panel, useEdgesState, useNodesState, useReactFlow } from 'reactflow'
 import 'reactflow/dist/style.css'
 import type { PipelineNodeData } from './codegen'
@@ -17,8 +17,13 @@ export interface FlowEditorProps {
   onGraphChange?: (nodes: Node<PipelineNodeData>[], edges: Edge[]) => void
 }
 
+export interface FlowEditorRef {
+  updateGraphFromYAML: (yamlContent: string) => void
+  updateGraphFromShell: (shellContent: string) => void
+}
+
 // 실제 에디터 캔버스 컴포넌트 (Provider 내부에서만 동작)
-function EditorCanvas({ onGraphChange }: FlowEditorProps) {
+const EditorCanvas = forwardRef<FlowEditorRef, FlowEditorProps>(({ onGraphChange }, ref) => {
   // React Flow 상태 훅: 노드/엣지 배열과 변경 핸들러를 반환
   const [nodes, setNodes, onNodesChange] = useNodesState<PipelineNodeData>(initialNodes)
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
@@ -34,9 +39,80 @@ function EditorCanvas({ onGraphChange }: FlowEditorProps) {
     }
   }, [nodes, edges, onGraphChange])
 
+  // YAML에서 파싱된 그래프로 업데이트
+  const updateGraphFromYAML = useCallback((yamlContent: string) => {
+    // parseYAMLToGraph 함수를 동적으로 import
+    import('./codegen').then(({ parseYAMLToGraph }) => {
+      const { nodes: newNodes, edges: newEdges } = parseYAMLToGraph(yamlContent)
+      
+      if (newNodes.length > 0) {
+        // 새로운 노드와 엣지로 그래프 업데이트
+        setNodes(newNodes)
+        setEdges(newEdges)
+        
+        // 뷰를 새로운 그래프에 맞게 조정
+        setTimeout(() => {
+          rf.fitView({ padding: 0.1 })
+        }, 100)
+      }
+    }).catch(error => {
+      console.error('YAML 파싱 모듈 로드 오류:', error)
+    })
+  }, [setNodes, setEdges, rf])
+
+  // Shell에서 파싱된 그래프로 업데이트
+  const updateGraphFromShell = useCallback((shellContent: string) => {
+    console.log('=== FlowEditor.updateGraphFromShell 호출됨 ===')
+    console.log('받은 Shell 내용:', shellContent)
+    
+    // parseShellToGraph 함수를 동적으로 import
+    import('./codegen').then(({ parseShellToGraph }) => {
+      console.log('parseShellToGraph 함수 로드 완료')
+      
+      const { nodes: newNodes, edges: newEdges } = parseShellToGraph(shellContent)
+      console.log('Shell 파싱 결과:', { newNodes, newEdges })
+      
+      if (newNodes.length > 0) {
+        console.log('새로운 Shell 노드들을 그래프에 적용 중...')
+        // 새로운 노드와 엣지로 그래프 업데이트
+        setNodes(newNodes)
+        setEdges(newEdges)
+        
+        // 뷰를 새로운 그래프에 맞게 조정
+        setTimeout(() => {
+          rf.fitView({ padding: 0.1 })
+        }, 100)
+        
+        console.log('Shell 그래프 업데이트 완료')
+      } else {
+        console.warn('Shell에서 파싱된 노드가 없습니다')
+      }
+    }).catch(error => {
+      console.error('Shell 파싱 모듈 로드 오류:', error)
+    })
+  }, [setNodes, setEdges, rf])
+
+  // ref를 통해 외부에서 함수 호출 가능하도록 설정
+  useImperativeHandle(ref, () => ({
+    updateGraphFromYAML,
+    updateGraphFromShell
+  }), [updateGraphFromYAML, updateGraphFromShell])
+
   // 엣지 연결 시: 화살표와 애니메이션 추가
   const onConnect = useCallback((params: Edge | Connection) => {
-    setEdges(e => addEdge({ ...params, animated: true, markerEnd: { type: MarkerType.ArrowClosed } }, e))
+    setEdges(e => {
+      const newEdge = {
+        ...params,
+        type: 'smoothstep',
+        animated: true,
+        markerEnd: { 
+          type: MarkerType.ArrowClosed,
+          width: 20,
+          height: 20
+        }
+      }
+      return addEdge(newEdge, e)
+    })
   }, [setEdges])
 
   // 팔레트 항목 → 사용자가 알아볼 라벨 생성
@@ -64,11 +140,43 @@ function EditorCanvas({ onGraphChange }: FlowEditorProps) {
   const addNode = useCallback((data: Partial<PipelineNodeData>, position?: { x: number, y: number }) => {
     setNodes(ns => {
       const id = `${data.kind}-${Date.now()}-${Math.round(Math.random()*1e4)}`
-      const pos = position ?? { x: 100 + ns.length * 40, y: 200 }
+      const pos = position ?? { x: 100 + ns.length * 200, y: 200 }
       const node: Node<PipelineNodeData> = { id, position: pos, data: { label: labelFor(data), ...(data as PipelineNodeData) } }
+      
+      // 이전 노드가 있으면 자동으로 연결
+      if (ns.length > 0) {
+        const lastNode = ns[ns.length - 1]
+        const edge: Edge = {
+          id: `auto-edge-${lastNode.id}-${id}`,
+          source: lastNode.id,
+          target: id,
+          type: 'smoothstep',
+          animated: true,
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            width: 20,
+            height: 20
+          },
+          label: `${ns.length}`,
+          labelStyle: {
+            fill: '#fff',
+            fontWeight: 600,
+            fontSize: '12px'
+          },
+          labelBgStyle: {
+            fill: '#1a192b',
+            fillOpacity: 0.8
+          },
+          labelBgPadding: [4, 4] as [number, number],
+          labelBgBorderRadius: 4
+        }
+        
+        setEdges(es => [...es, edge])
+      }
+      
       return [...ns, node]
     })
-  }, [setNodes])
+  }, [setNodes, setEdges])
 
   // 좌측 팔레트 정의 (드래그&클릭으로 추가)
   const palette = useMemo(() => [
@@ -89,42 +197,39 @@ function EditorCanvas({ onGraphChange }: FlowEditorProps) {
 
   // 선형 순서를 계산하여 엣지 라벨(1,2,3...)과 화살표를 갱신
   useEffect(() => {
-    const byId = new Map(nodes.map(n => [n.id, n]))
-    const outgoing = new Map<string, string[]>()
-    edges.forEach(e => {
-      if (!outgoing.has(e.source)) outgoing.set(e.source, [])
-      outgoing.get(e.source)!.push(e.target)
-    })
-    const start = nodes.find(n => n.data.kind === 'start')
-    const ordered: string[] = []
-    if (start) {
-      const visited = new Set<string>()
-      let cursor: Node<PipelineNodeData> | undefined = start
-      while (cursor && !visited.has(cursor.id)) {
-        ordered.push(cursor.id)
-        visited.add(cursor.id)
-        const nextIds = (outgoing.get(cursor.id) || [])
-        if (nextIds.length !== 1) break
-        const next = byId.get(nextIds[0])
-        if (!next) break
-        cursor = next
-      }
-    }
-
-    const orderMap = new Map<string, number>()
-    for (let i = 0; i < ordered.length - 1; i++) {
-      orderMap.set(`${ordered[i]}->${ordered[i+1]}`, i + 1)
-    }
-
+    // 간단한 방법: edges 배열의 순서대로 순서 번호 부여
     let changed = false
-    const nextEdges = edges.map(e => {
-      const key = `${e.source}->${e.target}`
-      const label = orderMap.has(key) ? String(orderMap.get(key)) : undefined
-      const markerEnd = { type: MarkerType.ArrowClosed }
-      const needUpdate = e.label !== label || JSON.stringify(e.markerEnd) !== JSON.stringify(markerEnd)
+    const nextEdges = edges.map((e, index) => {
+      const label = String(index + 1)
+      const markerEnd = { 
+        type: MarkerType.ArrowClosed,
+        width: 20,
+        height: 20
+      }
+      const needUpdate = e.label !== label || 
+                        JSON.stringify(e.markerEnd) !== JSON.stringify(markerEnd) ||
+                        e.type !== 'smoothstep' ||
+                        !e.animated
       if (needUpdate) {
         changed = true
-        return { ...e, label, markerEnd }
+        return { 
+          ...e, 
+          label, 
+          markerEnd,
+          type: 'smoothstep',
+          animated: true,
+          labelStyle: {
+            fill: '#fff',
+            fontWeight: 600,
+            fontSize: '12px'
+          },
+          labelBgStyle: {
+            fill: '#1a192b',
+            fillOpacity: 0.8
+          },
+          labelBgPadding: [4, 4] as [number, number],
+          labelBgBorderRadius: 4
+        }
       }
       return e
     })
@@ -186,7 +291,7 @@ function EditorCanvas({ onGraphChange }: FlowEditorProps) {
       </div>
     </div>
   )
-}
+})
 
 // Provider로 감싼 래퍼. useReactFlow 훅 사용을 가능하게 함
 export default function FlowEditor({ onGraphChange }: FlowEditorProps) {
@@ -196,5 +301,14 @@ export default function FlowEditor({ onGraphChange }: FlowEditorProps) {
     </ReactFlowProvider>
   )
 }
+
+// forwardRef를 사용한 래퍼 컴포넌트
+export const FlowEditorWithRef = forwardRef<FlowEditorRef, FlowEditorProps>((props, ref) => {
+  return (
+    <ReactFlowProvider>
+      <EditorCanvas ref={ref} onGraphChange={props.onGraphChange} />
+    </ReactFlowProvider>
+  )
+})
 
 
