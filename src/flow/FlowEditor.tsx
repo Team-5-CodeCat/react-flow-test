@@ -197,23 +197,42 @@ const EditorCanvas = forwardRef<FlowEditorRef, FlowEditorProps>(({ onGraphChange
 
   // 선형 순서를 계산하여 엣지 라벨(1,2,3...)과 화살표를 갱신
   useEffect(() => {
-    // 간단한 방법: edges 배열의 순서대로 순서 번호 부여
+    // 노드의 실제 순서를 기반으로 Edge 순서 계산
     let changed = false
-    const nextEdges = edges.map((e, index) => {
-      const label = String(index + 1)
+    
+    // 노드를 Y 좌표 순으로 정렬하여 실제 순서 파악
+    const sortedNodes = [...nodes].sort((a, b) => a.position.y - b.position.y)
+    
+    const nextEdges = edges.map((edge) => {
+      // source 노드의 정렬된 순서를 찾기
+      const sourceNodeIndex = sortedNodes.findIndex(n => n.id === edge.source)
+      const targetNodeIndex = sortedNodes.findIndex(n => n.id === edge.target)
+      
+      if (sourceNodeIndex === -1 || targetNodeIndex === -1) return edge
+      
+      // source 노드가 target 노드보다 위에 있으면 순서대로 번호 부여
+      let label: string
+      if (sourceNodeIndex < targetNodeIndex) {
+        // 정상적인 순서 (위에서 아래로)
+        label = String(sourceNodeIndex + 1)
+      } else {
+        // 역순인 경우 순서 조정
+        label = String(targetNodeIndex + 1)
+      }
+      
       const markerEnd = { 
         type: MarkerType.ArrowClosed,
         width: 20,
         height: 20
       }
-      const needUpdate = e.label !== label || 
-                        JSON.stringify(e.markerEnd) !== JSON.stringify(markerEnd) ||
-                        e.type !== 'smoothstep' ||
-                        !e.animated
+      const needUpdate = edge.label !== label || 
+                        JSON.stringify(edge.markerEnd) !== JSON.stringify(markerEnd) ||
+                        edge.type !== 'smoothstep' ||
+                        !edge.animated
       if (needUpdate) {
         changed = true
         return { 
-          ...e, 
+          ...edge, 
           label, 
           markerEnd,
           type: 'smoothstep',
@@ -231,7 +250,7 @@ const EditorCanvas = forwardRef<FlowEditorRef, FlowEditorProps>(({ onGraphChange
           labelBgBorderRadius: 4
         }
       }
-      return e
+      return edge
     })
 
     if (changed) setEdges(nextEdges)
