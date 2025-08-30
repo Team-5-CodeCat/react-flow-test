@@ -100,9 +100,9 @@ export default function OutputPanel({ nodes, edges, onYAMLUpdate, onShellUpdate 
               flex: 1,
               fontFamily: 'monospace',
               fontSize: '12px',
-              backgroundColor: '#1e1e1e',
-              color: '#d4d4d4',
-              border: '1px solid #444',
+              backgroundColor: '#2d3748',
+              color: '#f7fafc',
+              border: '1px solid #4a5568',
               borderRadius: '4px',
               padding: '8px',
               resize: 'none',
@@ -155,17 +155,18 @@ export default function OutputPanel({ nodes, edges, onYAMLUpdate, onShellUpdate 
               cursor: 'pointer',
               padding: '8px',
               borderRadius: '4px',
-              backgroundColor: '#1e1e1e',
+              backgroundColor: '#2d3748',
+              color: '#f7fafc',
               border: '1px solid transparent',
               transition: 'border-color 0.2s ease'
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.borderColor = '#444'
-              e.currentTarget.style.backgroundColor = '#2a2a2a'
+              e.currentTarget.style.borderColor = '#4a5568'
+              e.currentTarget.style.backgroundColor = '#4a5568'
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.borderColor = 'transparent'
-              e.currentTarget.style.backgroundColor = '#1e1e1e'
+              e.currentTarget.style.backgroundColor = '#2d3748'
             }}
             onClick={() => handleCodeClick(displayYAML, 'yaml')}
             title="클릭하여 편집"
@@ -179,17 +180,18 @@ export default function OutputPanel({ nodes, edges, onYAMLUpdate, onShellUpdate 
               cursor: 'pointer',
               padding: '8px',
               borderRadius: '4px',
-              backgroundColor: '#1e1e1e',
+              backgroundColor: '#2d3748',
+              color: '#f7fafc',
               border: '1px solid transparent',
               transition: 'border-color 0.2s ease'
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.borderColor = '#444'
-              e.currentTarget.style.backgroundColor = '#2a2a2a'
+              e.currentTarget.style.borderColor = '#4a5568'
+              e.currentTarget.style.backgroundColor = '#4a5568'
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.borderColor = 'transparent'
-              e.currentTarget.style.backgroundColor = '#1e1e1e'
+              e.currentTarget.style.backgroundColor = '#2d3748'
             }}
             onClick={() => handleCodeClick(displayShell, 'shell')}
             title="클릭하여 편집"
@@ -204,8 +206,36 @@ export default function OutputPanel({ nodes, edges, onYAMLUpdate, onShellUpdate 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       <div style={{ display: 'flex', gap: 8, borderBottom: '1px solid rgba(255,255,255,.15)', paddingBottom: 8, marginBottom: 8 }}>
-        <button onClick={() => setTab('yaml')} className={tab === 'yaml' ? 'active' : ''}>YAML</button>
-        <button onClick={() => setTab('shell')} className={tab === 'shell' ? 'active' : ''}>Shell</button>
+        <button 
+          onClick={() => setTab('yaml')} 
+          style={{
+            padding: '8px 16px',
+            backgroundColor: tab === 'yaml' ? '#4a5568' : '#2d3748',
+            color: '#f7fafc',
+            border: '1px solid #4a5568',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            fontWeight: tab === 'yaml' ? '600' : '400',
+            transition: 'all 0.2s ease'
+          }}
+        >
+          YAML
+        </button>
+        <button 
+          onClick={() => setTab('shell')} 
+          style={{
+            padding: '8px 16px',
+            backgroundColor: tab === 'shell' ? '#4a5568' : '#2d3748',
+            color: '#f7fafc',
+            border: '1px solid #4a5568',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            fontWeight: tab === 'shell' ? '600' : '400',
+            transition: 'all 0.2s ease'
+          }}
+        >
+          Shell
+        </button>
       </div>
       <div style={{ flex: 1, overflow: 'auto' }}>
         {renderContent()}
